@@ -1,0 +1,7 @@
+*.pyc
+*.fits
+__pycache__
+*~
+*.swp
+*.swo
+*.un*
