@@ -22,11 +22,11 @@ from tkinter import ttk
 #sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from spe2fits import SPE
 
-def getFilePath(nfile):
+def getFileBasename(nfile):
     print("getFilePath:", nfile)
     if hasattr(nfile, 'read'):
         return os.path.basename(nfile.name)
-    return nfile
+    return os.path.basename(nfile)
 
 class Application(tk.Frame):
     def __init__(self, master = None):
@@ -90,14 +90,13 @@ class Application(tk.Frame):
         self.chooseFilePath = os.path.dirname(
                 os.path.realpath(filenames[0])
                 )
-        print(self.chooseFilePath)
+        print("select:", self.chooseFilePath)
         self.chooseFileOutDir = filedialog.askdirectory(
                 initialdir = self.chooseFilePath,
                 parent = self.parent,
                 title = "Select output Directory",
                 mustexist = False, # TODO turn it True
                 )
-        print(self.chooseFileOutDir)
         self.convertFiles(filenames, self.chooseFileOutDir)
 
     def chooseDialogDir(self):
@@ -105,13 +104,15 @@ class Application(tk.Frame):
         pass
 
     def convertFiles(self, fileIter, outputDir):
+        print("outputDir:", outputDir)
         for onefile in fileIter:
             speHandler = SPE(onefile)
             outPrefix = os.path.splitext(
                     os.path.join(
-                        outputDir, getFilePath(onefile)
+                        outputDir, getFileBasename(onefile)
                         )
                     )[0]
+            print(outPrefix)
             # TODO make it async
             speHandler.spe2fits(
                     outPrefix = outPrefix,
