@@ -12,7 +12,7 @@ NOTE little-endian assumed
 """
 
 import sys
-sys.path.insert(0, '/home/jerryjia/project/marst/astropy/')
+#sys.path.insert(0, '/home/jerryjia/project/marst/astropy/')
 import os
 import re
 import struct
@@ -21,7 +21,7 @@ import numpy as np
 from astropy.io import fits
 
 # If FITS header changed, Major.Minor version will be changed
-VERSION = "0.1.2"
+VERSION = "0.2.0"
 AUTHOR = "JerryJia <jiajerry@mail.ustc.edu.cn>"
 
 class SPE:
@@ -204,15 +204,18 @@ class SPE:
         """ Extract information and construct FITS header from .SPE header
         """
         self._stripIgnore()
+
         self._img_count = self._spe_header['NumFrames'][0]
         self._xdim = self._spe_header['xdim'][0]
         self._ydim = self._spe_header['ydim'][0]
         self.datatype = SPE.SPE_DATATYPE.get(self._spe_header['datatype'][0], 'f')
         self._img_size = self._xdim * self._ydim * struct.calcsize(self.datatype)
+
         for k, v in self._spe_header.items():
-            self._fitshdr[k] = v
-        self.renameHeaderKey('ReadoutTime', 'READTIME', 'Experiment readout time in ms')
+            self._fitshdr[k.upper()] = v # why astropy does not auto upper or ignore case..
+
         self.renameHeaderKey('exp_sec', 'EXPOSURE')
+        self.renameHeaderKey('ReadoutTime', 'READTIME', 'Experiment readout time in ms')
         self.renameHeaderKey('DetTemperature', 'TEMP')
 
     def _stripIgnore(self):
@@ -230,7 +233,6 @@ class SPE:
         fitshdr = self._fitshdr
         try:
             comment = newcomment if newcomment is not None else fitshdr.comments[oldname]
-            print(oldname, newname, comment)
             fitshdr.insert(3, (newname, fitshdr[oldname], comment), after = True)
             fitshdr.remove(oldname)
         except Exception as e:
