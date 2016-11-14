@@ -12,6 +12,7 @@ image sub
 
 import sys
 import os
+import traceback
 
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -106,25 +107,52 @@ class Application(tk.Frame):
     def convertFiles(self, fileIter, outputDir):
         print("outputDir:", outputDir)
         for onefile in fileIter:
-            speHandler = SPE(onefile)
-            outPrefix = os.path.splitext(
-                    os.path.join(
-                        outputDir, getFileBasename(onefile)
+            try:
+                speHandler = SPE(onefile)
+                outPrefix = os.path.splitext(
+                        os.path.join(
+                            outputDir, getFileBasename(onefile)
+                            )
+                        )[0]
+                print(outPrefix)
+                # TODO make it async
+                speHandler.spe2fits(
+                        outPrefix = outPrefix,
                         )
-                    )[0]
-            print(outPrefix)
-            # TODO make it async
-            speHandler.spe2fits(
-                    outPrefix = outPrefix,
-                    )
+            except Exception as e:
+                messagebox.showinfo("Convert Failed: " + str(e), 
+                        traceback.format_exception(*sys.exc_info()))
         messagebox.showinfo("Convert Complete!", "see " + outputDir)
 
-#        toplevel = tk.Toplevel()
-#        newFrame = tk.Frame(toplevel, text = route)
-#        newFrame.pack()
+# ref:
+#  http://stackoverflow.com/questions/2883205/how-can-i-freeze-a-dual-mode-gui-and-console-application-using-cx-freeze
+#  https://mail.gnome.org/archives/commits-list/2012-November/msg04489.html
+#  http://stackoverflow.com/questions/23505835/cx-freeze-ignores-custom-variables-module
+def workaroundForGUI():
+    try:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+    except Exception as e:
+        class GuiLogger:
+            logfile = os.path.realpath(os.path.realpath(sys.argv[0]))
+            logfile = os.path.splitext(logfile)[0] + '.log'
+            logObj = open(logfile, "w")
+            def __init__(self):
+                self.logObj = GuiLogger.logObj
+            def write(self, data):
+                self.logObj.write(data)
+            def flush(self):
+                self.logObj.flush()
+            def close(self):
+                self.flush()
+            def read(self, data):
+                pass
+        sys.stdout = sys.stderr = sys.stdin = sys.__stdout__ = sys.__stdin__ = sys.__stderr__ = GuiLogger()
+
 
 def main():
     root = tk.Tk()
+    workaroundForGUI()
     app = Application(master = root)
     root.mainloop()
 

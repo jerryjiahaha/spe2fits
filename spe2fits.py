@@ -25,7 +25,7 @@ except:
     import pyfits as fits
 
 # If FITS header changed, Major.Minor version will be changed
-VERSION = "0.2.3"
+VERSION = "0.2.4"
 AUTHOR = "JerryJia <jiajerry@mail.ustc.edu.cn>"
 
 class SPE:
@@ -251,7 +251,7 @@ class SPE:
     # Some header to be added:  ROIinfo, type,
     # TODO save header defination to python
     @staticmethod
-    def loadHeadersDef(headerfile = os.path.join(os.path.dirname(__file__), "WINHEAD.TXT")) -> [{}]:
+    def loadHeadersDef(headerfile = "WINHEAD.TXT") -> [{}]:
         """ load/parse header defination file
         """
         import extractHeaderDesc as H

@@ -1,3 +1,4 @@
+import sys
 from cx_Freeze import setup, Executable
 from spe2fits import VERSION, AUTHOR
 
@@ -5,15 +6,17 @@ from spe2fits import VERSION, AUTHOR
 # fine tuning.
 buildOptions = dict(packages = [], excludes = [],
         include_files = "WINHEAD.TXT",
-
+        include_msvcr = True,
         )
 
 base = 'Console'
 
 executables = [
     Executable('spe2fits.py', base=base,
-        icon = 'bitbug_favicon.ico',
-        )
+        ),
+    Executable('spe2fitsGUI.py', base="Win32GUI" if sys.platform == 'win32' else base,
+        icon = 'favicon.ico',
+        ),
 ]
 
 setup(name='spe2fits',
