@@ -18,7 +18,11 @@ import re
 import struct
 
 import numpy as np
-from astropy.io import fits
+try:
+    from astropy.io import fits
+except:
+    print("Warning: module astropy not found, import pyfits instead")
+    import pyfits as fits
 
 # If FITS header changed, Major.Minor version will be changed
 VERSION = "0.2.0"
