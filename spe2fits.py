@@ -191,9 +191,15 @@ class SPE:
 
     def _initFitsHeader(self):
         fitshdr = fits.header.Header()
+        def uglySetHeader(key, val, comment):
+            try:
+                fitshdr[key] = ( val, comment )
+            except:
+                fitshdr[key] = ( str(val.encode()), comment )
         # Add additional header
         fitshdr['HEAD']    = ('PVCAM', 'Head model')
-        fitshdr['SPEFNAME'] = (self._filename, "original SPE filename")
+#        fitshdr['SPEFNAME'] = (self._filename, "original SPE filename")
+        uglySetHeader('SPEFNAME', *(self._filename, "original SPE filename"))
         fitshdr['TOOLNAME'] = ('spe2fits ' + VERSION, "Tools to convert WinViewer .SPE to FITS")
         fitshdr['AUTHOR'] = (AUTHOR, "Tools' author")
         return fitshdr
