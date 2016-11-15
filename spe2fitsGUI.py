@@ -122,7 +122,7 @@ class Application(tk.Frame):
         # button for select files to convert
         self.chooseFile = tk.Button(self,
                 text = "Convert Files...",
-                fg="black", bg="white",
+                fg="black", bg="lightyellow",
                 command = self.chooseDialogFiles,
                 )
         self.chooseFile.place(x=50, y=50)
@@ -132,7 +132,7 @@ class Application(tk.Frame):
         # button for select directory to convert
         self.chooseDir = tk.Button(self,
                 text = "Convert Directory...",
-                fg="black", bg="white",
+                fg="black", bg="lightyellow",
                 command = self.chooseDialogDir,
                 )
         self.chooseDir.place(x=50, y=100)
@@ -141,8 +141,10 @@ class Application(tk.Frame):
 
         # progress bar for converting
         self.convertNumber = tk.IntVar(self, 0, "convertedNum")
+        self.convertProgressNumber = tk.IntVar(self)
         self.convertProgress = ttk.Progressbar(self,
-                length = 200, variable = self.convertNumber,
+                length = 200, variable = self.convertProgressNumber,
+                mode = 'indeterminate',
                 )
         self.convertProgressNum = tk.Label(self,
                 textvariable = self.convertNumber)
@@ -162,13 +164,13 @@ class Application(tk.Frame):
                 )
         self.listenDir = tk.Button(self,
                 text = "Monitor directory...",
-                fg="black", bg="white",
+                fg="black", bg="lightyellow",
                 command = self.addListenDir,
                 )
         self.listenDir.place(x=50, y=250)
         self.listenDirOutput = tk.Button(self,
                 text = "Binded directory...",
-                fg="black", bg="white",
+                fg="black", bg="lightyellow",
                 command = self.bindListenDir,
                 )
         self.listenDirOutput.place(x=50, y=300)
@@ -181,14 +183,16 @@ class Application(tk.Frame):
                 )
         self.listenDirEnable.place(x=50, y=350)
         self.listenDirPathShow = tk.Label(self,
-                fg="black", bg="white", width = 80,
+                fg="black", bg="lightyellow", width = 80,
                 textvariable = self.listenDirPath,
+                anchor = "sw",
                 )
         self.listenDirPathShow.place(x=60+self.listenDir.winfo_reqwidth(),
                 y=250)
         self.listenDirOutputPathShow = tk.Label(self,
-                fg="black", bg="white", width = 80,
+                fg="black", bg="lightyellow", width = 80,
                 textvariable = self.listenDirOutputPath,
+                anchor = "sw",
                 )
         self.listenDirOutputPathShow.place(x=60+self.listenDir.winfo_reqwidth(),
                 y=300)
@@ -251,25 +255,10 @@ class Application(tk.Frame):
     def on_created(self, onefile):
         if not self.listenDirEnableFlag.get():
             return
-        try:
-            print("convert:", onefile)
-            outputDir = self.listenDirOutputPath.get()
-            oldPrefix = self.listenDirPath.get()
-            outPrefix = getOutputPrefix( onefile,
-                    outputDir, oldPrefix)
-            print("output prefix:", outPrefix)
-            self.checkDir(os.path.dirname(outPrefix))
-            speHandler = SPE(onefile)
-            speHandler.spe2fits(
-                    outPrefix = outPrefix,
-                    clobber = self.overWriteFileFlag.get(),
-                    )
-        except Exception as e:
-            messagebox.showinfo("Convert " + onefile + " Failed" + str(e),
-                    traceback.format_exception(*sys.exc_info()))
-        else:
-            # TODO show status on widgets
-            print("created")
+        self.convertFiles([onefile], self.listenDirOutputPath.get(),
+                oldPrefix = self.listenDirPath.get(),
+                showComplete = False,
+                )
 
     def chooseDialogFiles(self):
         print("chooseDialogFiles")
@@ -338,7 +327,7 @@ class Application(tk.Frame):
             return False
         return True
 
-    def convertFiles(self, fileIter, outputDir, oldPrefix = None):
+    def convertFiles(self, fileIter, outputDir, oldPrefix = None, showComplete = True):
         """ convert files
         fileIter: iterable file lists
         outputDir: destination output dir
@@ -347,22 +336,23 @@ class Application(tk.Frame):
         print("outputDir:", outputDir)
         filecount = 0
         fileallcount = 0
+        self.convertProgress.start()
         for onefile in fileIter:
             fileallcount += 1
             try:
-                print("convert: ", onefile)
-                speHandler = SPE(onefile)
                 outPrefix = getOutputPrefix( onefile,
                         outputDir, oldPrefix )
                 print("output prefix:", outPrefix)
                 self.checkDir(os.path.dirname(outPrefix))
+                print("convert: ", onefile)
+                speHandler = SPE(onefile)
                 # TODO check file existence first
                 # TODO make it async
                 # TODO handle file existence more friendly
                 speHandler.spe2fits(
                         outPrefix = outPrefix,
                         clobber = self.overWriteFileFlag.get(),
-                        output_verify = "warn", # XXX "warn" will alse throw exception?
+                        output_verify = "warn", # XXX "warn" will also throw exception?
                         )
             except OSError:
                 pass
@@ -370,14 +360,18 @@ class Application(tk.Frame):
                 messagebox.showinfo("Convert " + onefile + " Failed: " + str(e),
                         traceback.format_exception(*sys.exc_info()))
             else:
+                # convert complete callback
                 filecount += 1
                 self.convertNumber.set(self.convertNumber.get() + 1)
                 self.parent.update()
-        messagebox.showinfo("Convert Complete!", \
-                "{filecount}(/{allcount}) files convert into {outputDir}".format(
-                    filecount = filecount, outputDir = outputDir,
-                    allcount = fileallcount)
-                )
+        # all complete
+        self.convertProgress.stop()
+        if showComplete:
+            messagebox.showinfo("Convert Complete!", \
+                    "{filecount}(/{allcount}) files convert into {outputDir}".format(
+                        filecount = filecount, outputDir = outputDir,
+                        allcount = fileallcount)
+                    )
     def cleanup(self):
         print("cleanup")
         self.listener.stop()
