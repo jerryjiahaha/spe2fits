@@ -139,6 +139,16 @@ class Application(tk.Frame):
         self.chooseDirPath = os.path.abspath(os.path.curdir)
         self.chooseDirOutDir = self.chooseDirPath
 
+        # progress bar for converting
+        self.convertNumber = tk.IntVar(self, 0, "convertedNum")
+        self.convertProgress = ttk.Progressbar(self,
+                length = 200, variable = self.convertNumber,
+                )
+        self.convertProgressNum = tk.Label(self,
+                textvariable = self.convertNumber)
+        self.convertProgress.place(x=60+self.chooseDir.winfo_reqwidth(), y=100)
+        self.convertProgressNum.place(x=65+self.chooseFile.winfo_reqwidth(), y=50)
+
         # select dir to listen
         ## source direcory
         self.listenDirPath = tk.StringVar(
@@ -361,6 +371,8 @@ class Application(tk.Frame):
                         traceback.format_exception(*sys.exc_info()))
             else:
                 filecount += 1
+                self.convertNumber.set(self.convertNumber.get() + 1)
+                self.parent.update()
         messagebox.showinfo("Convert Complete!", \
                 "{filecount}(/{allcount}) files convert into {outputDir}".format(
                     filecount = filecount, outputDir = outputDir,
@@ -400,6 +412,7 @@ def workaroundForGUI():
         sys.stdout = sys.stderr = sys.stdin = sys.__stdout__ = sys.__stdin__ = sys.__stderr__ = GuiLogger()
 
 
+# ref: http://effbot.org/tkinterbook/tkinter-events-and-bindings.htm
 def on_closing(app):
     if messagebox.askokcancel("Quit", "Do you want to quit?"):
         app.cleanup()
