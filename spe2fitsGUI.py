@@ -13,9 +13,10 @@ image sub
 import sys
 import os
 import traceback
+from pathlib import Path # New in version 3.4
 
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, Checkbutton
 from tkinter import ttk
 #from tkinter import *
 #from tkinter.ttk import *
@@ -23,11 +24,33 @@ from tkinter import ttk
 #sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from spe2fits import SPE
 
-def getFileBasename(nfile):
-    print("getFilePath:", nfile)
-    if hasattr(nfile, 'read'):
-        return os.path.basename(nfile.name)
-    return os.path.basename(nfile)
+def yieldFilesUnderDirectory(dirname, match = None):
+    """ yield all file names under the directory 'dirname' recursively
+    return absolute path
+    """
+    print("test directory:", dirname)
+    dirnamePath = Path(dirname)
+    matched = dirnamePath.rglob(match)
+    for match in matched:
+        yield str(match.absolute())
+
+def getOutputPrefix(oldname, outputDir, oldPrefix):
+    """ get output path prefix
+    oldname: filename to be converted
+    outputDir: output directory name
+    oldPrefix: file's path will need to cut the prefix first
+    e.g.: path/b.ext -> output/b ( prefix is path )
+    e.g.: path/to/c.ext -> output/to/c ( prefix is path )
+    """
+    # XXX is os.path.abspath necessary ?
+    if oldPrefix is not None:
+        relpath = os.path.relpath( os.path.abspath(oldname),
+                os.path.abspath(oldPrefix) )
+    else:
+        relpath = os.path.basename(oldname)
+    relpath = os.path.splitext(relpath)[0]
+    print("relpath:", relpath)
+    return os.path.join( os.path.abspath(outputDir), relpath )
 
 class Application(tk.Frame):
     def __init__(self, master = None):
@@ -57,6 +80,13 @@ class Application(tk.Frame):
 
 
     def createWidgets(self):
+        self.overWriteFileFlag = tk.BooleanVar(self)
+        self.overwriteFile = tk.Checkbutton(self.parent,
+                text = "overwrite exist",
+                variable = self.overWriteFileFlag,
+                onvalue = True, offvalue = False,
+                )
+        self.overwriteFile.place(x=50, y=150)
         self.chooseFile = tk.Button(self,
                 text = "Convert Files...",
                 fg="black", bg="white",
@@ -86,7 +116,6 @@ class Application(tk.Frame):
                 )
         print(filenames)
         if len(filenames) == 0:
-            messagebox.showinfo("Select result", "No File Opened")
             return
         self.chooseFilePath = os.path.dirname(
                 os.path.realpath(filenames[0])
@@ -96,39 +125,94 @@ class Application(tk.Frame):
                 initialdir = self.chooseFilePath,
                 parent = self.parent,
                 title = "Select output Directory",
-                mustexist = False, # TODO turn it True
+                mustexist = False,
                 )
+        if not self.checkDir(self.chooseFileOutDir):
+            return
         self.convertFiles(filenames, self.chooseFileOutDir)
 
     def chooseDialogDir(self):
         print("chooseDialogDir")
-        pass
+        self.chooseDirPath = filedialog.askdirectory(
+                initialdir = self.chooseDirPath,
+                parent = self.parent,
+                title = "Select Directory contains .SPE files",
+                )
+        print("select:", self.chooseDirPath)
+        if len(self.chooseDirPath) == 0:
+            return
+        self.chooseDirOutDir = filedialog.askdirectory(
+                initialdir = self.chooseDirPath,
+                parent = self.parent,
+                title = "Select output Directory",
+                mustexist = False,
+                )
+        # TODO check wirte permission first
+        if not self.checkDir(self.chooseDirOutDir):
+            return
+        filenames = yieldFilesUnderDirectory(self.chooseDirPath,
+                match = "*.SPE")
+        if filenames is None:
+            messagebox.showinfo("Convert result", "No .SPE files under this directory")
+            return
+        self.convertFiles(filenames, self.chooseDirOutDir,
+                oldPrefix = self.chooseDirPath)
 
-    def convertFiles(self, fileIter, outputDir):
+    def checkDir(self, dirname):
+        try:
+            if not os.path.exists(dirname):
+                os.makedirs(dirname)
+        except Exception as e:
+            messagebox.showinfo("Check Directory Failed: " + str(e),
+                    traceback.format_exception(*sys.exc_info()))
+            return False
+        return True
+
+    def convertFiles(self, fileIter, outputDir, oldPrefix = None):
+        """ convert files
+        fileIter: iterable file lists
+        outputDir: destination output dir
+        oldPrefix: original path cut oldPrefix then concat outputDir
+        """
         print("outputDir:", outputDir)
+        filecount = 0
+        fileallcount = 0
         for onefile in fileIter:
+            fileallcount += 1
             try:
+                print("convert: ", onefile)
                 speHandler = SPE(onefile)
-                outPrefix = os.path.splitext(
-                        os.path.join(
-                            outputDir, getFileBasename(onefile)
-                            )
-                        )[0]
+                outPrefix = getOutputPrefix( onefile,
+                        outputDir, oldPrefix )
                 print(outPrefix)
+                self.checkDir(os.path.dirname(outPrefix))
+                # TODO check file existence first
                 # TODO make it async
+                # TODO handle file existence more friendly
                 speHandler.spe2fits(
                         outPrefix = outPrefix,
+                        clobber = self.overWriteFileFlag.get(),
+                        output_verify = "warn", # XXX "warn" will alse throw exception?
                         )
+            except OSError:
+                pass
             except Exception as e:
-                messagebox.showinfo("Convert Failed: " + str(e), 
+                messagebox.showinfo("Convert " + onefile + " Failed: " + str(e),
                         traceback.format_exception(*sys.exc_info()))
-        messagebox.showinfo("Convert Complete!", "see " + outputDir)
+            else:
+                filecount += 1
+        messagebox.showinfo("Convert Complete!", \
+                "{filecount}(/{allcount}) files convert into {outputDir}".format(
+                    filecount = filecount, outputDir = outputDir,
+                    allcount = fileallcount)
+                )
 
-# ref:
-#  http://stackoverflow.com/questions/2883205/how-can-i-freeze-a-dual-mode-gui-and-console-application-using-cx-freeze
-#  https://mail.gnome.org/archives/commits-list/2012-November/msg04489.html
-#  http://stackoverflow.com/questions/23505835/cx-freeze-ignores-custom-variables-module
 def workaroundForGUI():
+    """ redirect I/O when in GUI
+    ref:  http://stackoverflow.com/questions/2883205/how-can-i-freeze-a-dual-mode-gui-and-console-application-using-cx-freeze
+    ref:  https://mail.gnome.org/archives/commits-list/2012-November/msg04489.html
+    ref:  http://stackoverflow.com/questions/23505835/cx-freeze-ignores-custom-variables-module
+    """
     try:
         sys.stdout.write("\n")
         sys.stdout.flush()

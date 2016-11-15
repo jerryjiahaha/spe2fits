@@ -25,7 +25,7 @@ except:
     import pyfits as fits
 
 # If FITS header changed, Major.Minor version will be changed
-VERSION = "0.2.4"
+VERSION = "0.2.5"
 AUTHOR = "JerryJia <jiajerry@mail.ustc.edu.cn>"
 
 class SPE:
@@ -162,7 +162,7 @@ class SPE:
                     ).reshape(self._ydim, self._xdim)
         return datas
 
-    def writeToFits(self, dataArrs, outPrefix = None, clobber = True):
+    def writeToFits(self, dataArrs, outPrefix = None, clobber = True, output_verify = "exception"):
         """ Save dict of ndarray to fits file
         dataArrs: {index: dataArr} returned by `loadSpeImg`
         """
@@ -178,7 +178,7 @@ class SPE:
             hdu = fits.PrimaryHDU(data = dataArr,
                     header = self._fitshdr,
                     )
-            hdu.writeto(name, clobber = clobber)
+            hdu.writeto(name, clobber = clobber, output_verify = output_verify)
 
     def spe2fits(self, **kwargs):
         """ Shortcut method for saving all frames in .SPE to FITS
