@@ -14,7 +14,10 @@ import sys
 import os
 import traceback
 import re
+from warnings import warn
 from functools import partial
+from collections import deque
+from time import sleep
 from pathlib import Path # New in version 3.4
 
 # ref: https://github.com/gorakhargosh/watchdog
@@ -30,6 +33,8 @@ from tkinter import ttk
 
 #sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from spe2fits import SPE
+from eventQueue import *
+from debug import debug_method_info
 
 class customerDirHandler(FileSystemEventHandler):
     SPE_FILE_PATTERN = re.compile(".*\.spe", re.IGNORECASE)
@@ -39,9 +44,9 @@ class customerDirHandler(FileSystemEventHandler):
     def set_hook(self, hook):
         self._hook = hook
 
+    @debug_method_info()
     def on_created(self, event):
         super().on_created(event)
-        print("on created", event)
         if event.is_directory:
             return
         newfile = os.path.abspath(event.src_path)
@@ -54,11 +59,11 @@ class customerDirHandler(FileSystemEventHandler):
         except Exception as e:
             print(e)
 
+@debug_method_info()
 def yieldFilesUnderDirectory(dirname, match = None):
     """ yield all file names under the directory 'dirname' recursively
     return absolute path
     """
-    print("test directory:", dirname)
     dirnamePath = Path(dirname)
     matched = dirnamePath.rglob(match)
     for match in matched:
@@ -82,12 +87,47 @@ def getOutputPrefix(oldname, outputDir, oldPrefix):
     print("relpath:", relpath)
     return os.path.join( os.path.abspath(outputDir), relpath )
 
+class ConvertEvent(EventQueue):
+    _queue_router = { et: Queue() for et in EventType }
+    def __init__(self, master, fileIter, outputDir, oldPrefix, showComplete):
+        super().__init__(children = fileIter)
+        self.master = master
+        self.fileallcount = 0
+        self.filecount = 0
+        self.outputDir = outputDir
+        self.oldPrefix = oldPrefix
+        self.showComplete = showComplete
+
+    def createQueue(self):
+        return ConvertEvent._queue_router
+
+    def on_started(self):
+        self.master.onFileConvertStart()
+
+    def on_child_process(self, child):
+        # onefile is child
+        super().on_child_process(child)
+        return self.master.convertOneFile(child, self.outputDir, self.oldPrefix)
+
+    def on_child_done(self, result):
+        super().on_child_done(result)
+        self.fileallcount += 1
+        if result:
+            self.filecount += 1
+            self.master.onFileConverted()
+
+    def on_finished(self):
+        super().on_finished()
+        self.master.onFilesAllConverted(self.fileallcount, self.filecount, \
+                self.outputDir, self.showComplete)
+
 class Application(tk.Frame):
     def __init__(self, master = None):
         super().__init__(master)
         self.parent = master
         self.initUI()
         self.createWidgets()
+        self.convertingQueue = deque()
 
     def initUI(self):
         self.parent.title("PI/WinViewer .SPE to FITS Converter")
@@ -143,8 +183,8 @@ class Application(tk.Frame):
         self.convertNumber = tk.IntVar(self, 0, "convertedNum")
         self.convertProgressNumber = tk.IntVar(self)
         self.convertProgress = ttk.Progressbar(self,
-                length = 200, variable = self.convertProgressNumber,
-                mode = 'indeterminate',
+                length = 200, mode = 'indeterminate',
+                variable = self.convertProgressNumber,
                 )
         self.convertProgressNum = tk.Label(self,
                 textvariable = self.convertNumber)
@@ -197,9 +237,9 @@ class Application(tk.Frame):
         self.listenDirOutputPathShow.place(x=60+self.listenDir.winfo_reqwidth(),
                 y=300)
 
+    @debug_method_info()
     def checkListenTask(self):
         self.listener.unschedule_all()
-        print("checkListenTask")
         if self.listenDirEnableFlag.get():
             print("enable")
             listen_dir = os.path.abspath(self.listenDirPath.get())
@@ -216,8 +256,8 @@ class Application(tk.Frame):
         else:
             print("disable")
 
+    @debug_method_info()
     def addListenDir(self):
-        print("addListenDir")
         listenDirPath = filedialog.askdirectory(
                 parent = self,
                 title = "Auto convert (listen) .spe under this directory",
@@ -230,8 +270,8 @@ class Application(tk.Frame):
             self.listenDirPath.set(os.path.abspath(listenDirPath))
             self.checkListenTask()
 
+    @debug_method_info()
     def bindListenDir(self):
-        print("bindListenDir")
         newOutDir = filedialog.askdirectory(
                 parent = self,
                 title = "Auto convert .spe into this directory",
@@ -260,8 +300,8 @@ class Application(tk.Frame):
                 showComplete = False,
                 )
 
+    @debug_method_info()
     def chooseDialogFiles(self):
-        print("chooseDialogFiles")
         filenames = filedialog.askopenfilenames(
                 defaultextension = '.SPE',
                 filetypes = [('WinViewer Documents', '.SPE'), ('all files', '.*'),],
@@ -287,8 +327,8 @@ class Application(tk.Frame):
             return
         self.convertFiles(filenames, self.chooseFileOutDir)
 
+    @debug_method_info()
     def chooseDialogDir(self):
-        print("chooseDialogDir")
         self.chooseDirPath = filedialog.askdirectory(
                 initialdir = self.chooseDirPath,
                 parent = self,
@@ -334,46 +374,63 @@ class Application(tk.Frame):
         oldPrefix: original path cut oldPrefix then concat outputDir
         """
         print("outputDir:", outputDir)
-        filecount = 0
-        fileallcount = 0
+        convert_event = ConvertEvent(self, fileIter, outputDir, oldPrefix, showComplete)
+        convert_event.startEvents()
+
+    def convertOneFile(self, onefile, outputDir, oldPrefix):
+        if onefile in self.convertingQueue:
+            return False
+        try:
+            result = True
+            self.convertingQueue.append(onefile)
+            outPrefix = getOutputPrefix( onefile,
+                    outputDir, oldPrefix )
+            print("output prefix:", outPrefix)
+            self.checkDir(os.path.dirname(outPrefix)) # TODO check/error handler
+            print("convert:", onefile)
+            speHandler = SPE(onefile)
+            # TODO check file existence first
+            # TODO handle file existence more friendly
+            speHandler.spe2fits(
+                    outPrefix = outPrefix,
+                    clobber = self.overWriteFileFlag.get(),
+                    output_verify = "warn", # XXX "warn" also throw exception?
+                    )
+        except OSError as e:
+            warn(str(e))
+            result = False
+        except Exception as e:
+            warn(str(e))
+            messagebox.showinfo("Convert " + onefile + " Failed: " + str(e),
+                    traceback.format_exception(*sys.exc_info()))
+            result = False
+        else:
+            # convert complete callback
+            result = True
+        finally:
+            self.convertingQueue.remove(onefile)
+        return result
+
+    def onFileConvertStart(self):
         self.convertProgress.start()
-        for onefile in fileIter:
-            fileallcount += 1
-            try:
-                outPrefix = getOutputPrefix( onefile,
-                        outputDir, oldPrefix )
-                print("output prefix:", outPrefix)
-                self.checkDir(os.path.dirname(outPrefix))
-                print("convert: ", onefile)
-                speHandler = SPE(onefile)
-                # TODO check file existence first
-                # TODO make it async
-                # TODO handle file existence more friendly
-                speHandler.spe2fits(
-                        outPrefix = outPrefix,
-                        clobber = self.overWriteFileFlag.get(),
-                        output_verify = "warn", # XXX "warn" will also throw exception?
-                        )
-            except OSError:
-                pass
-            except Exception as e:
-                messagebox.showinfo("Convert " + onefile + " Failed: " + str(e),
-                        traceback.format_exception(*sys.exc_info()))
-            else:
-                # convert complete callback
-                filecount += 1
-                self.convertNumber.set(self.convertNumber.get() + 1)
-                self.parent.update()
-        # all complete
+
+    def onFileConverted(self):
+        self.convertNumber.set(self.convertNumber.get() + 1)
+
+    def onFilesAllConverted(self, fileallcount, filecount, outputDir,
+            showComplete = True):
         self.convertProgress.stop()
         if showComplete:
             messagebox.showinfo("Convert Complete!", \
                     "{filecount}(/{allcount}) files convert into {outputDir}".format(
-                        filecount = filecount, outputDir = outputDir,
-                        allcount = fileallcount)
+                        filecount = filecount, allcount = fileallcount,
+                        outputDir = outputDir,
+                        )
                     )
+
+
+    @debug_method_info()
     def cleanup(self):
-        print("cleanup")
         self.listener.stop()
         self.listener.join()
         self.parent.destroy()
@@ -410,6 +467,9 @@ def workaroundForGUI():
 def on_closing(app):
     if messagebox.askokcancel("Quit", "Do you want to quit?"):
         app.cleanup()
+    sleep(0.2)
+    print("exit")
+    os._exit(1)
 
 def main():
     root = tk.Tk()

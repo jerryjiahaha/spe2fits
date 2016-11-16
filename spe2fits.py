@@ -25,7 +25,7 @@ except:
     import pyfits as fits
 
 # If FITS header changed, Major.Minor version will be changed
-VERSION = "0.2.7"
+VERSION = "0.3.0"
 AUTHOR = "JerryJia <jiajerry@mail.ustc.edu.cn>"
 
 class SPE:
